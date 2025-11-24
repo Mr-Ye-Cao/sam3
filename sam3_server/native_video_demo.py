@@ -98,9 +98,28 @@ def track_video_native(video_path, prompt, output_path="tracked_native.mp4", sco
         frame_idx = result['frame_index']
         outputs = result['outputs']
         if outputs is not None:
-            frame_outputs[frame_idx] = outputs
+            # Only store essential data, convert tensors to numpy to save GPU memory
+            stored = {
+                'out_obj_ids': outputs.get('out_obj_ids', []),
+                'out_probs': outputs.get('out_probs', []),
+                'out_boxes_xywh': outputs.get('out_boxes_xywh', []),
+            }
+            # Only store mask if it exists
+            if 'out_binary_masks' in outputs and outputs['out_binary_masks'] is not None:
+                masks = outputs['out_binary_masks']
+                if hasattr(masks, 'cpu'):
+                    masks = masks.cpu().numpy()
+                stored['out_binary_masks'] = masks
+            frame_outputs[frame_idx] = stored
+
+        # Periodic GPU cleanup
+        if frame_idx % 100 == 0:
+            torch.cuda.empty_cache()
 
     print(f"Tracked {len(frame_outputs)} frames")
+
+    # Clear GPU memory before rendering
+    torch.cuda.empty_cache()
 
     # Create output video
     print(f"\nRendering output video...")
